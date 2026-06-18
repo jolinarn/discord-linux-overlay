@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "discord-linux-overlay"
+version = "0.1.0"
+description = "Transparent voice overlay for Discord on Linux (X11)"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = ["PyQt6"]
+
+[project.scripts]
+discord-overlay = "discord_overlay.__main__:main"
