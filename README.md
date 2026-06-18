@@ -1,19 +1,20 @@
 # Discord Linux Overlay
 
-A transparent, click-through voice overlay for Discord on Linux (X11). Shows who's in your voice channel and highlights speakers in real-time.
+A transparent, click-through voice overlay for Discord on Linux (X11). Shows who's in your voice channel with their profile pictures and highlights speakers in real-time — just like Discord's native overlay, but for Linux.
 
 Built with PyQt6. No Electron, no browser, no bloat.
 
 ## Features
 
-- Transparent, always-on-top overlay that doesn't steal focus
-- Click-through — interact with your game right through it
-- Real-time speaking indicators (green glow)
-- Mute/deafen status icons
-- Auto-hides when not in a voice channel
-- Auto-reconnects if Discord restarts
-- System tray icon with position controls
-- Configurable corner placement
+- **Discord-style UI** — dark panel with rounded avatars, matching Discord's native overlay look
+- **Profile pictures** — downloads and caches user avatars from Discord
+- **Speaking indicators** — green ring around avatar when someone talks
+- **Click-through** — interact with your game right through the overlay
+- **Draggable** — unlock, drag anywhere on screen, lock back in place
+- **Mute/deafen icons** — see who's muted or deafened at a glance
+- **Auto-hide** — appears when you join voice, disappears when you leave
+- **Auto-reconnect** — reconnects automatically if Discord restarts
+- **CLI controls** — toggle lock and visibility from terminal or keyboard shortcuts
 
 ## Requirements
 
@@ -56,7 +57,7 @@ pip install PyQt6
 ### 2. Run the overlay
 
 ```bash
-cd discord-overlay
+cd discord-linux-overlay
 python -m discord_overlay
 ```
 
@@ -70,8 +71,54 @@ The overlay appears automatically when you join a voice channel and hides when y
 
 ## Usage
 
-- **System tray icon**: right-click for options, left-click to toggle visibility
-- **Position**: change via tray menu (top-left, top-right, bottom-left, bottom-right)
+### Moving the overlay
+
+The overlay is click-through by default. To reposition it:
+
+```bash
+# Unlock — a blue border appears, drag the overlay wherever you want
+python -m discord_overlay --toggle-lock
+
+# Lock — click-through is re-enabled
+python -m discord_overlay --toggle-lock
+```
+
+### Toggle visibility
+
+```bash
+python -m discord_overlay --toggle
+```
+
+### Convenience script
+
+A wrapper script is included so you can run commands from anywhere:
+
+```bash
+# Symlink to your PATH (one-time setup)
+ln -sf ~/discord-linux-overlay/overlay-ctl ~/.local/bin/discord-overlay
+
+# Then use from anywhere
+discord-overlay --toggle-lock
+discord-overlay --toggle
+```
+
+### KDE keyboard shortcuts
+
+Bind these commands to keyboard shortcuts for quick in-game access:
+
+1. System Settings → Shortcuts → Custom Shortcuts
+2. Add new → Global Shortcut → Command/URL
+3. Set a trigger key (e.g. `Super+Shift+D`)
+4. Set the action to the command above
+
+### Preset positions
+
+You can also snap to a corner by editing the config:
+
+```bash
+# Edit ~/.config/discord-overlay/config.json
+# Set "position" to: "top-left", "top-right", "bottom-left", or "bottom-right"
+```
 
 ## Configuration
 
@@ -98,11 +145,15 @@ Config is stored at `~/.config/discord-overlay/config.json`:
 
 **Overlay doesn't appear**
 - Join a voice channel first — the overlay auto-hides when not in voice
-- Check the system tray icon — left-click to toggle visibility
+- Try toggling visibility: `python -m discord_overlay --toggle`
 
 **Click-through not working**
 - Requires X11. Wayland is not supported
 - Make sure `libXfixes` is installed: `pacman -Qs libxfixes` or `apt list --installed 2>/dev/null | grep libxfixes`
+
+**Token exchange fails (403 / error 1010)**
+- This is Cloudflare blocking the request — usually resolves on retry
+- Delete `~/.config/discord-overlay/config.json` and re-run setup if it persists
 
 ## License
 
