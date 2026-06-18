@@ -2,7 +2,9 @@ import json
 import os
 import socket
 import struct
+import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -59,6 +61,7 @@ class DiscordRPCThread(QThread):
             except Exception as e:
                 if not self._running:
                     return
+                print(f"[overlay] Error: {e}", file=sys.stderr)
                 self.error.emit(str(e))
                 self.disconnected.emit()
             finally:
@@ -173,7 +176,11 @@ class DiscordRPCThread(QThread):
         if not code:
             raise ConnectionError("No auth code received from Discord")
 
-        token_data = self._exchange_code(code)
+        try:
+            token_data = self._exchange_code(code)
+        except urllib.error.HTTPError as e:
+            body = e.read().decode()
+            raise ConnectionError(f"Token exchange failed ({e.code}): {body}")
         self._store_token(token_data)
         self._send_authenticate(token_data["access_token"])
 
@@ -190,17 +197,23 @@ class DiscordRPCThread(QThread):
                 f"Authentication failed: {data.get('data', {}).get('message', data)}"
             )
 
+    _HTTP_HEADERS = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "DiscordLinuxOverlay/0.1.0",
+    }
+
     def _exchange_code(self, code: str) -> dict:
         body = urllib.parse.urlencode({
             "grant_type": "authorization_code",
             "code": code,
             "client_id": self._config["client_id"],
             "client_secret": self._config["client_secret"],
+            "redirect_uri": "http://localhost",
         }).encode()
         req = urllib.request.Request(
             "https://discord.com/api/oauth2/token",
             data=body,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            headers=self._HTTP_HEADERS,
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read())
@@ -215,7 +228,7 @@ class DiscordRPCThread(QThread):
         req = urllib.request.Request(
             "https://discord.com/api/oauth2/token",
             data=body,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            headers=self._HTTP_HEADERS,
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read())
