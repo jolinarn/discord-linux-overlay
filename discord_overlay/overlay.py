@@ -63,6 +63,17 @@ class OverlayWindow(QWidget):
         x11.set_blur_behind(wid)
 
     def _reposition(self):
+        w = PANEL_WIDTH + 2 * MARGIN
+        h = self._calculate_height()
+        self.setFixedSize(w, h)
+
+        # If user dragged to a custom position, keep it
+        cx = self._config.get("custom_x")
+        cy = self._config.get("custom_y")
+        if cx is not None and cy is not None:
+            self.move(cx, cy)
+            return
+
         screen = QApplication.primaryScreen()
         if not screen:
             return
@@ -70,9 +81,6 @@ class OverlayWindow(QWidget):
         pos = self._config.get("position", "bottom-left")
         ox = self._config.get("offset_x", 10)
         oy = self._config.get("offset_y", 10)
-        w = PANEL_WIDTH + 2 * MARGIN
-        h = self._calculate_height()
-        self.setFixedSize(w, h)
 
         if "left" in pos:
             x = geo.x() + ox
@@ -224,6 +232,8 @@ class OverlayWindow(QWidget):
 
     def set_position(self, position: str):
         self._config["position"] = position
+        self._config.pop("custom_x", None)
+        self._config.pop("custom_y", None)
         from . import config as cfg_mod
         cfg_mod.save_config(self._config)
         self._reposition()
@@ -254,6 +264,12 @@ class OverlayWindow(QWidget):
     def mouseReleaseEvent(self, event):
         if not self._locked and event.button() == Qt.MouseButton.LeftButton:
             self._drag_pos = None
+            # Save custom position
+            p = self.pos()
+            self._config["custom_x"] = p.x()
+            self._config["custom_y"] = p.y()
+            from . import config as cfg_mod
+            cfg_mod.save_config(self._config)
             event.accept()
 
     # --- painting ---
