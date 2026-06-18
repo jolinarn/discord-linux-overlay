@@ -43,6 +43,7 @@ class OverlayWindow(QWidget):
         self._avatars = AvatarManager()
         self._avatars.avatar_ready.connect(self._on_avatar_ready)
         self._locked = True
+        self._was_connected = False
         self._drag_pos: QPoint | None = None
         self._setup_window()
 
@@ -112,10 +113,13 @@ class OverlayWindow(QWidget):
             self.update()
 
     def on_connected(self):
+        self._was_connected = True
         self._status_msg = ""
         self.update()
 
     def on_disconnected(self):
+        if not self._was_connected:
+            return
         self._status_msg = "Reconnecting..."
         self._reposition()
         if not self.isVisible() and self._channel_name:
@@ -216,6 +220,8 @@ class OverlayWindow(QWidget):
         self._speaking_timers.pop(user_id, None)
 
     def on_error(self, msg: str):
+        if not self._was_connected:
+            return
         self._status_msg = msg
         self._reposition()
         if not self.isVisible():
