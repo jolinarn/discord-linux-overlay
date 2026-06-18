@@ -1,4 +1,4 @@
-from PyQt6.QtCore import Qt, QRectF, QTimer
+from PyQt6.QtCore import Qt, QPoint, QRectF, QTimer
 from PyQt6.QtGui import (
     QBrush,
     QColor,
@@ -6,25 +6,27 @@ from PyQt6.QtGui import (
     QPainter,
     QPainterPath,
     QPen,
+    QPixmap,
 )
 from PyQt6.QtWidgets import QApplication, QWidget
 
 from . import x11
+from .avatars import AvatarManager
 
-PANEL_WIDTH = 220
-USER_HEIGHT = 32
-HEADER_HEIGHT = 28
-PADDING = 8
-AVATAR_SIZE = 24
-RADIUS = 12
-GLOW_PAD = 6
+PANEL_WIDTH = 200
+USER_HEIGHT = 36
+HEADER_HEIGHT = 24
+PADDING = 10
+AVATAR_SIZE = 28
+RADIUS = 8
+MARGIN = 4
+RING_WIDTH = 2.0
 
-BG_COLOR = QColor(10, 8, 20, 210)
-BORDER_COLOR = QColor(114, 137, 218, 160)
-TEXT_COLOR = QColor(200, 208, 232)
-DIM_COLOR = QColor(100, 100, 140)
-SPEAKING_COLOR = QColor(67, 181, 129)
-MUTED_COLOR = QColor(240, 71, 71, 180)
+BG_COLOR = QColor(30, 31, 34, 230)
+TEXT_COLOR = QColor(219, 222, 225)
+DIM_COLOR = QColor(148, 155, 164)
+SPEAKING_COLOR = QColor(35, 165, 90)
+MUTED_COLOR = QColor(242, 63, 67)
 DISCONNECT_COLOR = QColor(240, 160, 60)
 
 STATUS_HEIGHT = 20
@@ -38,6 +40,10 @@ class OverlayWindow(QWidget):
         self._users: dict[str, dict] = {}
         self._speaking_timers: dict[str, QTimer] = {}
         self._status_msg = ""
+        self._avatars = AvatarManager()
+        self._avatars.avatar_ready.connect(self._on_avatar_ready)
+        self._locked = True
+        self._drag_pos: QPoint | None = None
         self._setup_window()
 
     def _setup_window(self):
@@ -64,7 +70,7 @@ class OverlayWindow(QWidget):
         pos = self._config.get("position", "bottom-left")
         ox = self._config.get("offset_x", 10)
         oy = self._config.get("offset_y", 10)
-        w = PANEL_WIDTH + 2 * GLOW_PAD
+        w = PANEL_WIDTH + 2 * MARGIN
         h = self._calculate_height()
         self.setFixedSize(w, h)
 
@@ -81,15 +87,21 @@ class OverlayWindow(QWidget):
 
     def _calculate_height(self):
         n = min(len(self._users), self._config.get("max_users", 10))
-        h = GLOW_PAD * 2 + PADDING * 2
+        h = MARGIN * 2 + PADDING
         if self._channel_name:
             h += HEADER_HEIGHT
         h += n * USER_HEIGHT
         if self._status_msg:
             h += STATUS_HEIGHT
-        return max(h, GLOW_PAD * 2 + HEADER_HEIGHT + PADDING * 2)
+        if n > 0:
+            h += PADDING
+        return max(h, MARGIN * 2 + HEADER_HEIGHT + PADDING * 2)
 
     # --- slots ---
+
+    def _on_avatar_ready(self, user_id: str):
+        if user_id in self._users:
+            self.update()
 
     def on_connected(self):
         self._status_msg = ""
@@ -121,15 +133,17 @@ class OverlayWindow(QWidget):
             if not uid:
                 continue
             nick = vs.get("nick") or user.get("global_name") or user.get("username", "?")
+            avatar_hash = user.get("avatar")
             self._users[uid] = {
                 "username": nick,
-                "avatar_hash": user.get("avatar"),
+                "avatar_hash": avatar_hash,
                 "speaking": False,
                 "muted": vs.get("mute", False),
                 "deafened": vs.get("deaf", False),
                 "self_mute": vs.get("self_mute", False),
                 "self_deaf": vs.get("self_deaf", False),
             }
+            self._avatars.request(uid, avatar_hash)
         self._reposition()
         self.show()
         self.setup_x11()
@@ -144,15 +158,17 @@ class OverlayWindow(QWidget):
 
         if event == "create":
             nick = data.get("nick") or user.get("global_name") or user.get("username", "?")
+            avatar_hash = user.get("avatar")
             self._users[uid] = {
                 "username": nick,
-                "avatar_hash": user.get("avatar"),
+                "avatar_hash": avatar_hash,
                 "speaking": False,
                 "muted": data.get("mute", False),
                 "deafened": data.get("deaf", False),
                 "self_mute": data.get("self_mute", False),
                 "self_deaf": data.get("self_deaf", False),
             }
+            self._avatars.request(uid, avatar_hash)
         elif event == "update" and uid in self._users:
             nick = data.get("nick") or user.get("global_name") or user.get("username")
             if nick:
@@ -212,6 +228,34 @@ class OverlayWindow(QWidget):
         cfg_mod.save_config(self._config)
         self._reposition()
 
+    @property
+    def locked(self) -> bool:
+        return self._locked
+
+    def set_locked(self, locked: bool):
+        self._locked = locked
+        wid = int(self.winId())
+        if locked:
+            x11.set_click_through(wid)
+        else:
+            x11.remove_click_through(wid)
+        self.update()
+
+    def mousePressEvent(self, event):
+        if not self._locked and event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.pos()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if not self._locked and self._drag_pos is not None:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if not self._locked and event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = None
+            event.accept()
+
     # --- painting ---
 
     def paintEvent(self, _):
@@ -220,28 +264,31 @@ class OverlayWindow(QWidget):
 
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
-        gp = GLOW_PAD
-        panel = QRectF(gp, gp, self.width() - 2 * gp, self.height() - 2 * gp)
+        panel = QRectF(MARGIN, MARGIN, PANEL_WIDTH, self.height() - 2 * MARGIN)
+        bg_path = QPainterPath()
+        bg_path.addRoundedRect(panel, RADIUS, RADIUS)
+        p.fillPath(bg_path, QBrush(BG_COLOR))
 
-        path = QPainterPath()
-        path.addRoundedRect(panel, RADIUS, RADIUS)
-        p.fillPath(path, QBrush(BG_COLOR))
+        if not self._locked:
+            p.setPen(QPen(QColor(88, 101, 242, 200), 1.5))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(panel.adjusted(0.5, 0.5, -0.5, -0.5), RADIUS, RADIUS)
 
-        p.setPen(QPen(BORDER_COLOR, 1.0))
-        p.drawRoundedRect(panel.adjusted(0.5, 0.5, -0.5, -0.5), RADIUS, RADIUS)
-
-        y = gp + PADDING
-        x = gp + PADDING
+        y = MARGIN + PADDING
+        x = MARGIN + PADDING
 
         if self._channel_name:
             p.setPen(QPen(DIM_COLOR))
-            p.setFont(QFont("Sans", 8))
+            f = QFont("Sans", 8, QFont.Weight.DemiBold)
+            f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.5)
+            p.setFont(f)
             p.drawText(
                 int(x), int(y),
                 int(PANEL_WIDTH - PADDING * 2), HEADER_HEIGHT,
                 Qt.AlignmentFlag.AlignVCenter,
-                f"\U0001f50a {self._channel_name}",
+                self._channel_name.upper(),
             )
             y += HEADER_HEIGHT
 
@@ -249,7 +296,7 @@ class OverlayWindow(QWidget):
         for i, (uid, user) in enumerate(self._users.items()):
             if i >= max_users:
                 break
-            self._paint_user(p, x, y, user)
+            self._paint_user(p, uid, x, y, user)
             y += USER_HEIGHT
 
         if self._status_msg:
@@ -264,7 +311,7 @@ class OverlayWindow(QWidget):
 
         p.end()
 
-    def _paint_user(self, p: QPainter, x: float, y: float, user: dict):
+    def _paint_user(self, p: QPainter, uid: str, x: float, y: float, user: dict):
         speaking = user["speaking"]
         muted = user["muted"] or user["self_mute"]
         deafened = user["deafened"] or user["self_deaf"]
@@ -272,56 +319,75 @@ class OverlayWindow(QWidget):
         avatar_y = y + (USER_HEIGHT - AVATAR_SIZE) / 2
         avatar_rect = QRectF(x, avatar_y, AVATAR_SIZE, AVATAR_SIZE)
 
+        # avatar image (circular clip)
+        pixmap = self._avatars.get(uid)
+        if pixmap:
+            clip = QPainterPath()
+            clip.addEllipse(avatar_rect)
+            p.save()
+            p.setClipPath(clip)
+            scaled = pixmap.scaled(
+                AVATAR_SIZE, AVATAR_SIZE,
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            p.drawPixmap(avatar_rect.toRect(), scaled)
+            p.restore()
+        else:
+            # fallback: colored initial
+            hue = hash(user["username"]) % 360
+            bg = QColor.fromHsv(hue, 100, 140)
+            circle = QPainterPath()
+            circle.addEllipse(avatar_rect)
+            p.fillPath(circle, QBrush(bg))
+            p.setPen(QPen(QColor(255, 255, 255)))
+            p.setFont(QFont("Sans", 10, QFont.Weight.Bold))
+            p.drawText(avatar_rect.toRect(), Qt.AlignmentFlag.AlignCenter,
+                       user["username"][0].upper())
+
+        # speaking ring
         if speaking:
-            glow = QColor(SPEAKING_COLOR)
-            glow.setAlpha(60)
-            p.setBrush(QBrush(glow))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.drawEllipse(avatar_rect.adjusted(-3, -3, 3, 3))
+            p.setPen(QPen(SPEAKING_COLOR, RING_WIDTH))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            ring = avatar_rect.adjusted(-1, -1, 1, 1)
+            p.drawEllipse(ring)
 
-        hue = hash(user["username"]) % 360
-        avatar_bg = QColor.fromHsv(hue, 120, 180)
-        if speaking:
-            avatar_bg = SPEAKING_COLOR
-
-        avatar_path = QPainterPath()
-        avatar_path.addEllipse(avatar_rect)
-        p.fillPath(avatar_path, QBrush(avatar_bg))
-
-        p.setPen(QPen(QColor(255, 255, 255)))
-        p.setFont(QFont("Sans", 10, QFont.Weight.Bold))
-        p.drawText(avatar_rect.toRect(), Qt.AlignmentFlag.AlignCenter,
-                   user["username"][0].upper())
-
-        text_x = x + AVATAR_SIZE + 8
+        # username
+        text_x = x + AVATAR_SIZE + 10
         text_color = SPEAKING_COLOR if speaking else TEXT_COLOR
         if muted or deafened:
             text_color = DIM_COLOR
         p.setPen(QPen(text_color))
-        p.setFont(QFont("Sans", 9))
+        p.setFont(QFont("Sans", 9, QFont.Weight.Medium))
 
         name = user["username"]
-        if len(name) > 18:
-            name = name[:17] + "…"
+        if len(name) > 16:
+            name = name[:15] + "…"
 
-        text_w = int(PANEL_WIDTH - AVATAR_SIZE - PADDING * 3 - 20)
+        text_w = int(PANEL_WIDTH - AVATAR_SIZE - PADDING * 2 - 24)
         p.drawText(
             int(text_x), int(y), text_w, USER_HEIGHT,
             Qt.AlignmentFlag.AlignVCenter, name,
         )
 
-        icon_x = x + PANEL_WIDTH - PADDING * 2 - 14
-        icon_cy = y + USER_HEIGHT / 2
-        if deafened:
-            self._draw_icon(p, icon_x, icon_cy, MUTED_COLOR, deafened=True)
-        elif muted:
-            self._draw_icon(p, icon_x, icon_cy, MUTED_COLOR, deafened=False)
+        # mute/deafen indicator
+        if deafened or muted:
+            icon_x = x + PANEL_WIDTH - PADDING * 2 - 12
+            icon_cy = y + USER_HEIGHT / 2
+            self._draw_status_icon(p, icon_x, icon_cy, deafened)
 
-    def _draw_icon(self, p: QPainter, x: float, cy: float, color: QColor, deafened: bool):
-        p.setPen(QPen(color, 1.5))
+    def _draw_status_icon(self, p: QPainter, x: float, cy: float, deafened: bool):
+        p.setPen(QPen(MUTED_COLOR, 1.5))
         p.setBrush(Qt.BrushStyle.NoBrush)
         if deafened:
-            p.drawEllipse(QRectF(x, cy - 5, 10, 10))
+            # headphone shape
+            p.drawArc(QRectF(x, cy - 5, 10, 8), 0, 180 * 16)
+            p.drawLine(int(x), int(cy - 1), int(x), int(cy + 4))
+            p.drawLine(int(x + 10), int(cy - 1), int(x + 10), int(cy + 4))
         else:
-            p.drawRoundedRect(QRectF(x + 2, cy - 5, 6, 10), 2, 2)
-        p.drawLine(int(x), int(cy + 6), int(x + 10), int(cy - 6))
+            # mic shape
+            p.drawRoundedRect(QRectF(x + 2, cy - 5, 6, 8), 3, 3)
+            p.drawLine(int(x + 5), int(cy + 3), int(x + 5), int(cy + 5))
+        # slash
+        p.setPen(QPen(MUTED_COLOR, 2.0))
+        p.drawLine(int(x), int(cy + 5), int(x + 10), int(cy - 5))

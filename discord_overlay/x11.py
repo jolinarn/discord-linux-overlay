@@ -62,6 +62,30 @@ def set_click_through(window_id: int) -> bool:
         _x11.XCloseDisplay(display)
 
 
+def remove_click_through(window_id: int) -> bool:
+    display = _x11.XOpenDisplay(None)
+    if not display:
+        return False
+    try:
+        event_base = ctypes.c_int()
+        error_base = ctypes.c_int()
+        if not _xfixes.XFixesQueryExtension(
+            display, ctypes.byref(event_base), ctypes.byref(error_base)
+        ):
+            return False
+        major = ctypes.c_int(5)
+        minor = ctypes.c_int(0)
+        _xfixes.XFixesQueryVersion(display, ctypes.byref(major), ctypes.byref(minor))
+        # passing 0 (None) as region resets input shape to default
+        _xfixes.XFixesSetWindowShapeRegion(
+            display, window_id, _SHAPE_INPUT, 0, 0, 0
+        )
+        _x11.XFlush(display)
+        return True
+    finally:
+        _x11.XCloseDisplay(display)
+
+
 def set_window_type_notification(window_id: int):
     subprocess.run(
         [

@@ -1,4 +1,4 @@
-from PyQt6.QtGui import QAction, QIcon
+from PyQt6.QtGui import QAction, QCursor, QIcon
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 
@@ -12,15 +12,20 @@ class TrayIcon(QSystemTrayIcon):
         self.setIcon(icon)
         self.setToolTip("Discord Voice Overlay")
 
-        self._build_menu()
+        self._menu = self._build_menu()
+        self.setContextMenu(self._menu)
         self.activated.connect(self._on_activated)
 
-    def _build_menu(self):
+    def _build_menu(self) -> QMenu:
         menu = QMenu()
 
         self._toggle_action = QAction("Toggle Overlay", menu)
         self._toggle_action.triggered.connect(self._overlay.toggle_visibility)
         menu.addAction(self._toggle_action)
+
+        self._lock_action = QAction("Unlock Position", menu)
+        self._lock_action.triggered.connect(self._toggle_lock)
+        menu.addAction(self._lock_action)
 
         menu.addSeparator()
 
@@ -37,8 +42,13 @@ class TrayIcon(QSystemTrayIcon):
         quit_action.triggered.connect(QApplication.quit)
         menu.addAction(quit_action)
 
-        self.setContextMenu(menu)
+        return menu
+
+    def _toggle_lock(self):
+        locked = not self._overlay.locked
+        self._overlay.set_locked(locked)
+        self._lock_action.setText("Unlock Position" if locked else "Lock Position")
 
     def _on_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            self._overlay.toggle_visibility()
+            self._menu.popup(QCursor.pos())
