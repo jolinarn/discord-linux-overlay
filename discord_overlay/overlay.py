@@ -1,4 +1,4 @@
-from PyQt6.QtCore import Qt, QPoint, QRectF, QTimer
+from PyQt6.QtCore import Qt, QPoint, QRectF, QTimer, pyqtSignal
 from PyQt6.QtGui import (
     QBrush,
     QColor,
@@ -33,6 +33,8 @@ STATUS_HEIGHT = 20
 
 
 class OverlayWindow(QWidget):
+    lock_changed = pyqtSignal(bool)
+
     def __init__(self, config: dict):
         super().__init__()
         self._config = config
@@ -255,6 +257,7 @@ class OverlayWindow(QWidget):
             x11.set_click_through(wid)
         else:
             x11.remove_click_through(wid)
+        self.lock_changed.emit(locked)
         self.update()
 
     def mousePressEvent(self, event):

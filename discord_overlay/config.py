@@ -30,6 +30,7 @@ _DEFAULTS = {
     "max_users": 10,
     "opacity": 0.85,
     "show_channel_name": True,
+    "lock_hotkey": "Ctrl+Shift+O",
 }
 
 

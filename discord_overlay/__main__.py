@@ -5,6 +5,7 @@ import sys
 from PyQt6.QtWidgets import QApplication
 
 from .config import FirstRunDialog, load_config
+from .hotkey import GlobalHotkeyThread
 from .overlay import OverlayWindow
 from .rpc import DiscordRPCThread
 from .tray import TrayIcon
@@ -47,7 +48,11 @@ def main():
     rpc.speaking_stop.connect(overlay.on_speaking_stop)
     rpc.error.connect(overlay.on_error)
 
+    hotkey = GlobalHotkeyThread(config.get("lock_hotkey", "Ctrl+Shift+O"))
+    hotkey.triggered.connect(lambda: overlay.set_locked(not overlay.locked))
+
     app.aboutToQuit.connect(rpc.stop)
+    app.aboutToQuit.connect(hotkey.stop)
 
     # Signal handlers for external control
     signal.signal(signal.SIGUSR1, lambda *_: overlay.set_locked(not overlay.locked))
@@ -55,6 +60,7 @@ def main():
 
     tray.show()
     rpc.start()
+    hotkey.start()
 
     sys.exit(app.exec())
 

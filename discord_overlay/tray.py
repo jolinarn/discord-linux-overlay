@@ -15,6 +15,7 @@ class TrayIcon(QSystemTrayIcon):
         self._menu = self._build_menu()
         self.setContextMenu(self._menu)
         self.activated.connect(self._on_activated)
+        self._overlay.lock_changed.connect(self._on_lock_changed)
 
     def _build_menu(self) -> QMenu:
         menu = QMenu()
@@ -47,6 +48,9 @@ class TrayIcon(QSystemTrayIcon):
     def _toggle_lock(self):
         locked = not self._overlay.locked
         self._overlay.set_locked(locked)
+        self._lock_action.setText("Unlock Position" if locked else "Lock Position")
+
+    def _on_lock_changed(self, locked: bool):
         self._lock_action.setText("Unlock Position" if locked else "Lock Position")
 
     def _on_activated(self, reason):
