@@ -148,14 +148,15 @@ class OverlayWindow(QWidget):
                 continue
             nick = vs.get("nick") or user.get("global_name") or user.get("username", "?")
             avatar_hash = user.get("avatar")
+            vstate = vs.get("voice_state", {})
             self._users[uid] = {
                 "username": nick,
                 "avatar_hash": avatar_hash,
                 "speaking": False,
-                "muted": vs.get("mute", False),
-                "deafened": vs.get("deaf", False),
-                "self_mute": vs.get("self_mute", False),
-                "self_deaf": vs.get("self_deaf", False),
+                "muted": vstate.get("mute", False),
+                "deafened": vstate.get("deaf", False),
+                "self_mute": vstate.get("self_mute", False),
+                "self_deaf": vstate.get("self_deaf", False),
             }
             self._avatars.request(uid, avatar_hash)
         self._reposition()
@@ -173,24 +174,26 @@ class OverlayWindow(QWidget):
         if event == "create":
             nick = data.get("nick") or user.get("global_name") or user.get("username", "?")
             avatar_hash = user.get("avatar")
+            vs = data.get("voice_state", {})
             self._users[uid] = {
                 "username": nick,
                 "avatar_hash": avatar_hash,
                 "speaking": False,
-                "muted": data.get("mute", False),
-                "deafened": data.get("deaf", False),
-                "self_mute": data.get("self_mute", False),
-                "self_deaf": data.get("self_deaf", False),
+                "muted": vs.get("mute", False),
+                "deafened": vs.get("deaf", False),
+                "self_mute": vs.get("self_mute", False),
+                "self_deaf": vs.get("self_deaf", False),
             }
             self._avatars.request(uid, avatar_hash)
         elif event == "update" and uid in self._users:
             nick = data.get("nick") or user.get("global_name") or user.get("username")
             if nick:
                 self._users[uid]["username"] = nick
-            self._users[uid]["muted"] = data.get("mute", False)
-            self._users[uid]["deafened"] = data.get("deaf", False)
-            self._users[uid]["self_mute"] = data.get("self_mute", False)
-            self._users[uid]["self_deaf"] = data.get("self_deaf", False)
+            vs = data.get("voice_state", {})
+            self._users[uid]["muted"] = vs.get("mute", False)
+            self._users[uid]["deafened"] = vs.get("deaf", False)
+            self._users[uid]["self_mute"] = vs.get("self_mute", False)
+            self._users[uid]["self_deaf"] = vs.get("self_deaf", False)
         elif event == "delete":
             self._users.pop(uid, None)
             if uid in self._speaking_timers:
@@ -395,24 +398,22 @@ class OverlayWindow(QWidget):
             Qt.AlignmentFlag.AlignVCenter, name,
         )
 
-        # mute/deafen indicator
-        if deafened or muted:
-            icon_x = x + PANEL_WIDTH - PADDING * 2 - 12
-            icon_cy = y + USER_HEIGHT / 2
-            self._draw_status_icon(p, icon_x, icon_cy, deafened)
+        # mute/deafen indicator (always shown)
+        icon_x = x + PANEL_WIDTH - PADDING * 2 - 12
+        icon_cy = y + USER_HEIGHT / 2
+        self._draw_status_icon(p, icon_x, icon_cy, muted, deafened)
 
-    def _draw_status_icon(self, p: QPainter, x: float, cy: float, deafened: bool):
-        p.setPen(QPen(MUTED_COLOR, 1.5))
+    def _draw_status_icon(self, p: QPainter, x: float, cy: float, muted: bool, deafened: bool):
+        color = MUTED_COLOR if muted or deafened else DIM_COLOR
+        p.setPen(QPen(color, 1.5))
         p.setBrush(Qt.BrushStyle.NoBrush)
         if deafened:
-            # headphone shape
             p.drawArc(QRectF(x, cy - 5, 10, 8), 0, 180 * 16)
             p.drawLine(int(x), int(cy - 1), int(x), int(cy + 4))
             p.drawLine(int(x + 10), int(cy - 1), int(x + 10), int(cy + 4))
         else:
-            # mic shape
             p.drawRoundedRect(QRectF(x + 2, cy - 5, 6, 8), 3, 3)
             p.drawLine(int(x + 5), int(cy + 3), int(x + 5), int(cy + 5))
-        # slash
-        p.setPen(QPen(MUTED_COLOR, 2.0))
-        p.drawLine(int(x), int(cy + 5), int(x + 10), int(cy - 5))
+        if muted or deafened:
+            p.setPen(QPen(MUTED_COLOR, 2.0))
+            p.drawLine(int(x), int(cy + 5), int(x + 10), int(cy - 5))
