@@ -37,6 +37,9 @@ class TrayIcon(QSystemTrayIcon):
             action.triggered.connect(lambda _, p=pos: self._overlay.set_position(p))
             pos_menu.addAction(action)
 
+        self._screen_menu = menu.addMenu("Screen")
+        self._screen_menu.aboutToShow.connect(self._populate_screens)
+
         menu.addSeparator()
 
         quit_action = QAction("Quit", menu)
@@ -52,6 +55,19 @@ class TrayIcon(QSystemTrayIcon):
 
     def _on_lock_changed(self, locked: bool):
         self._lock_action.setText("Unlock Position" if locked else "Lock Position")
+
+    def _populate_screens(self):
+        self._screen_menu.clear()
+        current = self._config.get("screen", "")
+        for screen in QApplication.screens():
+            name = screen.name()
+            geo = screen.geometry()
+            label = f"{name} ({geo.width()}x{geo.height()})"
+            if name == current:
+                label += " *"
+            action = QAction(label, self._screen_menu)
+            action.triggered.connect(lambda _, s=screen: self._overlay.set_screen(s))
+            self._screen_menu.addAction(action)
 
     def _on_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:

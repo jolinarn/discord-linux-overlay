@@ -1,11 +1,16 @@
+import os
 import signal
 import subprocess
 import sys
 
+from .wayland import is_wayland
+
+if is_wayland():
+    os.environ.setdefault("QT_WAYLAND_SHELL_INTEGRATION", "layer-shell")
+
 from PyQt6.QtWidgets import QApplication
 
 from .config import FirstRunDialog, load_config
-from .hotkey import GlobalHotkeyThread
 from .overlay import OverlayWindow
 from .rpc import DiscordRPCThread
 from .tray import TrayIcon
@@ -48,8 +53,15 @@ def main():
     rpc.speaking_stop.connect(overlay.on_speaking_stop)
     rpc.error.connect(overlay.on_error)
 
-    hotkey = GlobalHotkeyThread(config.get("lock_hotkey", "Ctrl+Shift+O"))
-    hotkey.triggered.connect(lambda: overlay.set_locked(not overlay.locked))
+    lock_hotkey = config.get("lock_hotkey", "Ctrl+Shift+O")
+    if is_wayland():
+        from .hotkey_portal import PortalHotkeyThread
+        hotkey = PortalHotkeyThread(lock_hotkey)
+        hotkey.triggered.connect(lambda: overlay.set_locked(not overlay.locked))
+    else:
+        from .hotkey import GlobalHotkeyThread
+        hotkey = GlobalHotkeyThread(lock_hotkey)
+        hotkey.triggered.connect(lambda: overlay.set_locked(not overlay.locked))
 
     app.aboutToQuit.connect(rpc.stop)
     app.aboutToQuit.connect(hotkey.stop)

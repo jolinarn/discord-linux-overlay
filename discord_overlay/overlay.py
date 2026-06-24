@@ -10,7 +10,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import QApplication, QWidget
 
-from . import x11
+from . import wayland, x11
 from .avatars import AvatarManager
 
 PANEL_WIDTH = 200
@@ -38,6 +38,8 @@ class OverlayWindow(QWidget):
     def __init__(self, config: dict):
         super().__init__()
         self._config = config
+        self._wayland = wayland.is_wayland()
+        self._layer_shell = False
         self._channel_name = ""
         self._users: dict[str, dict] = {}
         self._speaking_timers: dict[str, QTimer] = {}
@@ -50,27 +52,44 @@ class OverlayWindow(QWidget):
         self._setup_window()
 
     def _setup_window(self):
-        self.setWindowFlags(
+        flags = (
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool
-            | Qt.WindowType.X11BypassWindowManagerHint
         )
+        if not self._wayland:
+            flags |= Qt.WindowType.X11BypassWindowManagerHint
+        self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+
+        if self._wayland:
+            pos = self._config.get("position", "bottom-left")
+            ox = self._config.get("offset_x", 10)
+            oy = self._config.get("offset_y", 10)
+            self._layer_shell = wayland.setup_layer_shell(
+                self, pos, ox, oy,
+                screen_name=self._config.get("screen", ""),
+            )
+
         self._reposition()
 
-    def setup_x11(self):
-        wid = int(self.winId())
-        x11.set_click_through(wid)
-        x11.set_blur_behind(wid)
+    def setup_platform(self):
+        if self._wayland:
+            wayland.set_click_through(self)
+        else:
+            wid = int(self.winId())
+            x11.set_click_through(wid)
+            x11.set_blur_behind(wid)
 
     def _reposition(self):
         w = PANEL_WIDTH + 2 * MARGIN
         h = self._calculate_height()
         self.setFixedSize(w, h)
 
-        # If user dragged to a custom position, keep it
+        if self._layer_shell:
+            return
+
         cx = self._config.get("custom_x")
         cy = self._config.get("custom_y")
         if cx is not None and cy is not None:
@@ -126,7 +145,7 @@ class OverlayWindow(QWidget):
         self._reposition()
         if not self.isVisible() and self._channel_name:
             self.show()
-            self.setup_x11()
+            self.setup_platform()
         self.update()
 
     def on_voice_channel(self, data: dict):
@@ -161,7 +180,7 @@ class OverlayWindow(QWidget):
             self._avatars.request(uid, avatar_hash)
         self._reposition()
         self.show()
-        self.setup_x11()
+        self.setup_platform()
         self.update()
 
     def on_voice_state(self, data: dict):
@@ -231,7 +250,7 @@ class OverlayWindow(QWidget):
         self._reposition()
         if not self.isVisible():
             self.show()
-            self.setup_x11()
+            self.setup_platform()
         self.update()
 
     def toggle_visibility(self):
@@ -239,7 +258,7 @@ class OverlayWindow(QWidget):
             self.hide()
         else:
             self.show()
-            self.setup_x11()
+            self.setup_platform()
 
     def set_position(self, position: str):
         self._config["position"] = position
@@ -247,7 +266,29 @@ class OverlayWindow(QWidget):
         self._config.pop("custom_y", None)
         from . import config as cfg_mod
         cfg_mod.save_config(self._config)
-        self._reposition()
+        if self._layer_shell:
+            ox = self._config.get("offset_x", 10)
+            oy = self._config.get("offset_y", 10)
+            was_visible = self.isVisible()
+            if was_visible:
+                self.hide()
+            wayland.update_position(self, position, ox, oy)
+            if was_visible:
+                self.show()
+        else:
+            self._reposition()
+
+    def set_screen(self, screen):
+        self._config["screen"] = screen.name()
+        from . import config as cfg_mod
+        cfg_mod.save_config(self._config)
+        if self._layer_shell:
+            was_visible = self.isVisible()
+            if was_visible:
+                self.hide()
+            wayland.update_screen(self, screen)
+            if was_visible:
+                self.show()
 
     @property
     def locked(self) -> bool:
@@ -255,28 +296,39 @@ class OverlayWindow(QWidget):
 
     def set_locked(self, locked: bool):
         self._locked = locked
-        wid = int(self.winId())
-        if locked:
-            x11.set_click_through(wid)
+        if self._wayland:
+            if locked:
+                wayland.set_click_through(self)
+            else:
+                wayland.remove_click_through(self)
         else:
-            x11.remove_click_through(wid)
+            wid = int(self.winId())
+            if locked:
+                x11.set_click_through(wid)
+            else:
+                x11.remove_click_through(wid)
         self.lock_changed.emit(locked)
         self.update()
 
     def mousePressEvent(self, event):
+        if self._layer_shell:
+            return
         if not self._locked and event.button() == Qt.MouseButton.LeftButton:
             self._drag_pos = event.globalPosition().toPoint() - self.pos()
             event.accept()
 
     def mouseMoveEvent(self, event):
+        if self._layer_shell:
+            return
         if not self._locked and self._drag_pos is not None:
             self.move(event.globalPosition().toPoint() - self._drag_pos)
             event.accept()
 
     def mouseReleaseEvent(self, event):
+        if self._layer_shell:
+            return
         if not self._locked and event.button() == Qt.MouseButton.LeftButton:
             self._drag_pos = None
-            # Save custom position
             p = self.pos()
             self._config["custom_x"] = p.x()
             self._config["custom_y"] = p.y()
