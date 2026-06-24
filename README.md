@@ -11,7 +11,7 @@ Built with PyQt6. No Electron, no browser, no bloat.
 - **Speaking indicators** — green ring around avatar when someone talks
 - **Click-through** — interact with your game right through the overlay
 - **Draggable** — unlock, drag anywhere on screen, lock back in place
-- **Mute/deafen icons** — see who's muted or deafened at a glance (in progress)
+- **Mute/deafen icons** — see who's muted or deafened at a glance
 - **Auto-hide** — appears when you join voice, disappears when you leave
 - **Auto-reconnect** — reconnects automatically if Discord restarts
 - **CLI controls** — toggle lock and visibility from terminal or keyboard shortcuts
