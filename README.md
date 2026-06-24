@@ -1,6 +1,8 @@
 # Discord Linux Overlay
 
-A transparent, click-through voice overlay for Discord on Linux (X11). Shows who's in your voice channel with their profile pictures and highlights speakers in real-time — just like Discord's native overlay, but for Linux.
+A transparent, click-through voice overlay for Discord on Linux. Shows who's in your voice channel with their profile pictures and highlights speakers in real-time — just like Discord's native overlay, but for Linux.
+
+Works on both X11 and Wayland (KDE Plasma).
 
 Built with PyQt6. No Electron, no browser, no bloat.
 
@@ -9,8 +11,10 @@ Built with PyQt6. No Electron, no browser, no bloat.
 - **Discord-style UI** — dark panel with rounded avatars, matching Discord's native overlay look
 - **Profile pictures** — downloads and caches user avatars from Discord
 - **Speaking indicators** — green ring around avatar when someone talks
+- **X11 + Wayland** — works on both, with layer-shell support on KDE Plasma Wayland
 - **Click-through** — interact with your game right through the overlay
-- **Draggable** — unlock, drag anywhere on screen, lock back in place
+- **Draggable** — unlock, drag anywhere on screen, lock back in place (X11)
+- **Screen selection** — pick which monitor to display on (Wayland)
 - **Mute/deafen icons** — see who's muted or deafened at a glance
 - **Auto-hide** — appears when you join voice, disappears when you leave
 - **Auto-reconnect** — reconnects automatically if Discord restarts
@@ -18,28 +22,39 @@ Built with PyQt6. No Electron, no browser, no bloat.
 
 ## Requirements
 
-- Linux with X11 (Wayland not supported)
+- Linux (X11 or Wayland)
 - Python 3.10+
 - PyQt6
 - Discord desktop app (not browser)
-- `xprop` (usually pre-installed)
+
+**X11 only:** `xprop`, `libXfixes` (usually pre-installed)
+
+**Wayland only:** `dbus-python`, `PyGObject`, `layer-shell-qt` (for KDE Plasma)
 
 ### Arch / CachyOS
 
 ```bash
+# X11
 sudo pacman -S python-pyqt6 xorg-xprop
+
+# Wayland (KDE Plasma)
+sudo pacman -S python-pyqt6 python-dbus python-gobject layer-shell-qt
 ```
 
 ### Ubuntu / Debian
 
 ```bash
+# X11
 sudo apt install python3-pyqt6 x11-utils
+
+# Wayland (KDE Plasma)
+sudo apt install python3-pyqt6 python3-dbus python3-gi layer-shell-qt
 ```
 
 ### pip
 
 ```bash
-pip install PyQt6
+pip install PyQt6 dbus-python PyGObject
 ```
 
 ## Setup
@@ -111,14 +126,14 @@ Bind these commands to keyboard shortcuts for quick in-game access:
 3. Set a trigger key (e.g. `Super+Shift+D`)
 4. Set the action to the command above
 
-### Preset positions
+### System tray
 
-You can also snap to a corner by editing the config:
+Right-click the tray icon for quick access to:
 
-```bash
-# Edit ~/.config/discord-overlay/config.json
-# Set "position" to: "top-left", "top-right", "bottom-left", or "bottom-right"
-```
+- **Toggle Overlay** — show/hide
+- **Unlock/Lock Position** — toggle click-through for dragging (X11)
+- **Position** — snap to a corner (top-left, top-right, bottom-left, bottom-right)
+- **Screen** — pick which monitor to display on (Wayland)
 
 ## Configuration
 
@@ -132,6 +147,8 @@ Config is stored at `~/.config/discord-overlay/config.json`:
 | `max_users` | `10` | Max users shown in overlay |
 | `opacity` | `0.85` | Background opacity |
 | `show_channel_name` | `true` | Show voice channel name |
+| `screen` | (primary) | Monitor name, e.g. `DP-1` (Wayland) |
+| `lock_hotkey` | `Ctrl+Shift+O` | Global hotkey to toggle lock |
 
 ## Troubleshooting
 
@@ -147,9 +164,14 @@ Config is stored at `~/.config/discord-overlay/config.json`:
 - Join a voice channel first — the overlay auto-hides when not in voice
 - Try toggling visibility: `python -m discord_overlay --toggle`
 
-**Click-through not working**
-- Requires X11. Wayland is not supported
+**Click-through not working (X11)**
 - Make sure `libXfixes` is installed: `pacman -Qs libxfixes` or `apt list --installed 2>/dev/null | grep libxfixes`
+
+**Overlay stuck on wrong monitor (Wayland)**
+- Right-click the tray icon → Screen → pick the correct monitor
+
+**Hotkey not working (Wayland)**
+- The XDG GlobalShortcuts portal registers the shortcut, but KDE may require you to assign the key in System Settings → Shortcuts → Global Shortcuts
 
 **Token exchange fails (403 / error 1010)**
 - This is Cloudflare blocking the request — usually resolves on retry
